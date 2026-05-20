@@ -353,6 +353,7 @@ def login_screen():
         f"（地震 {len(question_ids('地震'))} 题 · 测井 {len(question_ids('测井'))} 题）"
     )
     st.markdown("---")
+    st.caption("作者：潘高 · 中国海洋大学 2023 级勘查技术与工程 · 📮 18306376923@163.com")
 
     student_tab, admin_tab = st.tabs(["学生入口", "管理员入口"])
 
@@ -397,6 +398,7 @@ def main_screen():
         st.markdown(f"👤 **{st.session_state.username}**")
         st.markdown("---")
         nav_options = ["🌊 地震刷题", "🔩 测井刷题", "🔥 错题轰炸", "⚙️ 设置"]
+
         if st.session_state.nav not in nav_options:
             st.session_state.nav = nav_options[0]
         st.radio("导航", nav_options, key="nav")
@@ -404,6 +406,8 @@ def main_screen():
         render_sync_status()
         st.markdown("---")
         show_stats()
+        st.markdown("---")
+        st.caption("潘高 · 中国海洋大学\n2023级勘查技术与工程\n📮 18306376923@163.com")
 
     nav = st.session_state.nav
 
