@@ -34,6 +34,8 @@ _DEFAULTS = {
     "username": "",
     "logged_in": False,
     "admin_logged_in": False,
+    "sync_ok": False,
+    "sync_error": "",
     "user_state": {},
     "main_queue": [],
     "main_idx": 0,
@@ -91,18 +93,36 @@ def get_admin_password() -> str:
 
 def load_user_state(username: str) -> dict:
     client = get_gist_client()
-    return client.load_state(username) if client else {}
+    if not client:
+        st.session_state.sync_ok = False
+        st.session_state.sync_error = "未配置 GITHUB_TOKEN 和 GIST_ID，进度只保存在本次会话。"
+        return {}
+    state = client.load_state(username)
+    st.session_state.sync_ok = not bool(client.last_error)
+    st.session_state.sync_error = client.last_error
+    return state
 
 
 def load_all_user_states() -> dict:
     client = get_gist_client()
-    return client.load_all_states() if client else {}
+    if not client:
+        st.session_state.sync_error = "未配置 GITHUB_TOKEN 和 GIST_ID。"
+        return {}
+    users = client.load_all_states()
+    st.session_state.sync_error = client.last_error
+    return users
 
 
 def save_user_state():
     client = get_gist_client()
-    if client:
-        client.save_state(st.session_state.username, st.session_state.user_state)
+    if not client:
+        st.session_state.sync_ok = False
+        st.session_state.sync_error = "未配置 GITHUB_TOKEN 和 GIST_ID，进度只保存在本次会话。"
+        return False
+    ok = client.save_state(st.session_state.username, st.session_state.user_state)
+    st.session_state.sync_ok = ok
+    st.session_state.sync_error = "" if ok else client.last_error
+    return ok
 
 
 # ── queue builders ────────────────────────────────────────────────────────────
@@ -188,6 +208,18 @@ def show_stats():
             f"{icon} {category}：{summary['done']} / {summary['total']}，"
             f"错题 {summary['wrong']}"
         )
+
+
+def render_sync_status():
+    error = st.session_state.get("sync_error", "")
+    if error:
+        st.warning(f"云同步未成功：{error[:220]}")
+    elif st.session_state.get("sync_ok"):
+        st.success("✅ 云同步已连接")
+    elif get_gist_client():
+        st.info("☁️ 云同步已配置，答题后会保存")
+    else:
+        st.info("💡 未配置云同步，进度只在本次会话有效")
 
 
 def render_q_header(q: dict):
@@ -317,6 +349,8 @@ def login_screen():
                 st.rerun()
         if not get_gist_client():
             st.info("💡 未配置 GitHub Gist，进度仅在本次会话有效。")
+        elif st.session_state.sync_error:
+            st.warning(f"云同步读取失败：{st.session_state.sync_error[:220]}")
 
     with admin_tab:
         admin_password = get_admin_password()
@@ -340,6 +374,8 @@ def main_screen():
         if st.session_state.nav not in nav_options:
             st.session_state.nav = nav_options[0]
         st.radio("导航", nav_options, key="nav")
+        st.markdown("---")
+        render_sync_status()
         st.markdown("---")
         show_stats()
 
@@ -394,6 +430,9 @@ def main_screen():
                 del st.session_state[k]
             st.rerun()
         st.markdown("---")
+        st.subheader("☁️ 云同步")
+        render_sync_status()
+        st.markdown("---")
         if get_gist_client():
             st.success("✅ GitHub Gist 已配置，多端同步已开启")
         else:
@@ -416,6 +455,10 @@ def admin_screen():
 
     with st.spinner("正在读取用户进度…"):
         users = load_all_user_states()
+
+    if st.session_state.sync_error:
+        st.error(st.session_state.sync_error)
+        return
 
     if not users:
         st.info("暂时没有读取到用户进度。学生答题并保存后，这里会出现统计。")

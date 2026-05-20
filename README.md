@@ -38,6 +38,10 @@ streamlit run app.py
    ADMIN_PASSWORD = "your_admin_password"
    ```
 
+> 注意：本地 `.streamlit/secrets.toml` 不会上传到 GitHub。部署后必须在
+> Streamlit Cloud 的 **Manage app → Settings → Secrets** 里配置同样的三项。
+> `GITHUB_TOKEN` 需要具备 Gist 读写权限，否则用户进度无法跨登录保存。
+
 ## 文件说明
 
 | 文件 | 说明 |

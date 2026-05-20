@@ -9,6 +9,7 @@ class GistClient:
     def __init__(self, token: str, gist_id: str):
         self.token = token
         self.gist_id = gist_id
+        self.last_error = ""
         self.headers = {
             "Authorization": f"token {token}",
             "Accept": "application/vnd.github.v3+json",
@@ -21,6 +22,7 @@ class GistClient:
 
     def load_state(self, username: str) -> dict:
         """Load state dict for user. Returns {} if not found."""
+        self.last_error = ""
         try:
             resp = requests.get(
                 f"{GIST_API}/{self.gist_id}",
@@ -28,6 +30,7 @@ class GistClient:
                 timeout=10,
             )
             if resp.status_code != 200:
+                self.last_error = f"Gist 读取失败：HTTP {resp.status_code} {resp.text[:160]}"
                 return {}
             gist = resp.json()
             fname = self._filename(username)
@@ -35,11 +38,13 @@ class GistClient:
                 content = gist["files"][fname].get("content", "{}")
                 return json.loads(content)
             return {}
-        except Exception:
+        except Exception as exc:
+            self.last_error = f"Gist 读取失败：{exc}"
             return {}
 
     def load_all_states(self) -> dict:
         """Load all user state files from the configured Gist."""
+        self.last_error = ""
         try:
             resp = requests.get(
                 f"{GIST_API}/{self.gist_id}",
@@ -47,6 +52,7 @@ class GistClient:
                 timeout=10,
             )
             if resp.status_code != 200:
+                self.last_error = f"Gist 读取失败：HTTP {resp.status_code} {resp.text[:160]}"
                 return {}
 
             users = {}
@@ -59,11 +65,13 @@ class GistClient:
                 except json.JSONDecodeError:
                     users[username] = {}
             return users
-        except Exception:
+        except Exception as exc:
+            self.last_error = f"Gist 读取失败：{exc}"
             return {}
 
     def save_state(self, username: str, state: dict) -> bool:
         """Save state dict for user. Returns True on success."""
+        self.last_error = ""
         fname = self._filename(username)
         payload = {
             "files": {
@@ -77,6 +85,10 @@ class GistClient:
                 json=payload,
                 timeout=10,
             )
-            return resp.status_code == 200
-        except Exception:
+            if resp.status_code == 200:
+                return True
+            self.last_error = f"Gist 保存失败：HTTP {resp.status_code} {resp.text[:160]}"
+            return False
+        except Exception as exc:
+            self.last_error = f"Gist 保存失败：{exc}"
             return False
