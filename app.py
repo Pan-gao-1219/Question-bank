@@ -17,7 +17,7 @@ st.set_page_config(
 )
 
 # ── load questions ─────────────────────────────────────────────────────────────
-@st.cache_resource
+@st.cache_data
 def load_questions():
     path = os.path.join(os.path.dirname(__file__), "questions_data.json")
     with open(path, encoding="utf-8") as f:
@@ -28,7 +28,6 @@ TOTAL = len(QUESTIONS)
 
 
 # ── gist client ───────────────────────────────────────────────────────────────
-@st.cache_resource
 def get_gist_client():
     try:
         token = st.secrets.get("GITHUB_TOKEN", "")
@@ -364,5 +363,4 @@ def main():
         main_screen()
 
 
-if __name__ == "__main__":
-    main()
+main()
