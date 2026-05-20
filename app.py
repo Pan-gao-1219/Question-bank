@@ -177,9 +177,18 @@ def summarize_state(state: dict, category: str | None = None) -> dict:
     }
 
 
-def reset_practice(prefix: str, queue: list[str]):
+def resume_index(queue: list[str]) -> int:
+    """Return the first question that has not been mastered yet."""
+    state = st.session_state.user_state
+    for idx, qid in enumerate(queue):
+        if state.get(qid) != 1:
+            return idx
+    return len(queue)
+
+
+def reset_practice(prefix: str, queue: list[str], resume: bool = False):
     st.session_state[f"{prefix}_queue"] = queue
-    st.session_state[f"{prefix}_idx"] = 0
+    st.session_state[f"{prefix}_idx"] = resume_index(queue) if resume else 0
     st.session_state[f"{prefix}_show"] = False
     st.session_state[f"{prefix}_answered"] = False
     st.session_state[f"{prefix}_last"] = ""
@@ -187,7 +196,7 @@ def reset_practice(prefix: str, queue: list[str]):
 
 def reset_all_queues():
     for category in CATEGORIES:
-        reset_practice(CATEGORY_PREFIX[category], build_category_queue(category))
+        reset_practice(CATEGORY_PREFIX[category], build_category_queue(category), resume=True)
     reset_practice("wrong", build_wrong_queue(active_wrong_category()))
 
 
