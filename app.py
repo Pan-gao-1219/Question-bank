@@ -57,6 +57,8 @@ _DEFAULTS = {
     "wrong_show": False,
     "wrong_answered": False,
     "wrong_last": "",
+    "seismic_qtype": "全部",
+    "logging_qtype": "全部",
     "wrong_category": "全部",
     "nav": "🌊 地震刷题",
 }
@@ -154,8 +156,13 @@ def build_main_queue():
     return question_ids()
 
 
-def build_category_queue(category: str):
-    return question_ids(category)
+def build_category_queue(category: str, qtype: str = "全部"):
+    qids = question_ids(category)
+    if qtype == "选择题":
+        return [qid for qid in qids if QUESTIONS[qid]["opts"]]
+    if qtype == "填空/简答":
+        return [qid for qid in qids if not QUESTIONS[qid]["opts"]]
+    return qids
 
 
 def active_wrong_category():
@@ -415,9 +422,17 @@ def main_screen():
         category = "地震" if nav.startswith("🌊") else "测井"
         prefix = CATEGORY_PREFIX[category]
         st.header(nav)
-        if not st.session_state[f"{prefix}_queue"]:
-            reset_practice(prefix, build_category_queue(category))
-        practice_panel(prefix)
+        qtype_key = f"{prefix}_qtype"
+        st.radio("题型", ["全部", "选择题", "填空/简答"],
+                 horizontal=True, key=qtype_key)
+        cur_qtype = st.session_state[qtype_key]
+        filtered_q = build_category_queue(category, cur_qtype)
+        if set(st.session_state[f"{prefix}_queue"]) != set(filtered_q):
+            reset_practice(prefix, filtered_q, resume=True)
+        if not filtered_q:
+            st.info("该题型暂无题目。")
+        else:
+            practice_panel(prefix)
 
     elif nav == "🔥 错题轰炸":
         st.header("🔥 错题轰炸区")
