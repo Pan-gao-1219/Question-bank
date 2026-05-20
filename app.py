@@ -257,7 +257,7 @@ def render_sync_status():
 
 def render_q_header(q: dict):
     cat = "🌊 地震" if q["category"] == "地震" else "🔩 测井"
-    typ = {"fill": "填空", "choice": "选择", "judge": "判断"}.get(q["type"], "简答")
+    typ = {"fill": "填空", "choice": "选择", "judge": "判断", "multi": "多选"}.get(q["type"], "简答")
     st.markdown(f"**[{cat} · {typ}]** `Q{q['id']}/{TOTAL}`")
     st.markdown(f"### {q['q']}")
 
@@ -290,8 +290,42 @@ def practice_panel(prefix: str):
     st.markdown("---")
     st.caption(f"本轮进度：{idx + 1} / {len(queue)}")
 
-    if q["opts"]:
-        # ── multiple choice ───────────────────────────────────────────────────
+    if q.get("type") == "multi" and q["opts"]:
+        # ── multi-select (checkboxes) ─────────────────────────────────────────
+        if not st.session_state[done]:
+            st.write("多选题（可选多项）：")
+            for opt in q["opts"]:
+                letter = opt[0].upper()
+                st.checkbox(opt, key=f"{prefix}_cb_{qid}_{idx}_{letter}")
+            if st.button("提交", key=f"{prefix}_sub_{qid}", type="primary"):
+                selected = "".join(sorted(
+                    opt[0].upper() for opt in q["opts"]
+                    if st.session_state.get(f"{prefix}_cb_{qid}_{idx}_{opt[0].upper()}", False)
+                ))
+                if not selected:
+                    st.warning("请至少选择一个选项")
+                else:
+                    st.session_state[last] = selected
+                    st.session_state[done] = True
+                    st.rerun()
+        else:
+            user_ans = st.session_state[last].upper()
+            corr_ans = "".join(sorted(c for c in q["a"].upper() if c.isalpha()))
+            if user_ans == corr_ans:
+                st.success("✅ 回答正确！")
+                mark_correct(qid)
+            else:
+                st.error(f"❌ 错误。你选了 **{user_ans}**，正确是 **{corr_ans}**")
+                mark_wrong(qid)
+            st.info(f"正确答案：**{q['a']}**")
+            if st.button("下一题 →", key=f"{prefix}_nxt_{qid}", type="primary"):
+                st.session_state[f"{prefix}_idx"] += 1
+                st.session_state[show] = False
+                st.session_state[done] = False
+                st.session_state[last] = ""
+                st.rerun()
+    elif q["opts"]:
+        # ── single choice (radio) ─────────────────────────────────────────────
         if not st.session_state[done]:
             choice = st.radio("选择答案：", q["opts"],
                               key=f"{prefix}_r_{qid}_{idx}", index=None)
@@ -553,7 +587,7 @@ def admin_screen():
         detail_rows.append({
             "题号": qid,
             "分类": q.get("category", ""),
-            "题型": {"fill": "填空", "choice": "选择", "judge": "判断"}.get(q.get("type"), "简答"),
+            "题型": {"fill": "填空", "choice": "选择", "judge": "判断", "multi": "多选"}.get(q.get("type"), "简答"),
             "状态": status,
             "题目": q.get("q", ""),
         })
