@@ -38,6 +38,30 @@ class GistClient:
         except Exception:
             return {}
 
+    def load_all_states(self) -> dict:
+        """Load all user state files from the configured Gist."""
+        try:
+            resp = requests.get(
+                f"{GIST_API}/{self.gist_id}",
+                headers=self.headers,
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                return {}
+
+            users = {}
+            for fname, meta in resp.json().get("files", {}).items():
+                if not fname.startswith("user_") or not fname.endswith(".json"):
+                    continue
+                username = fname[len("user_"):-len(".json")]
+                try:
+                    users[username] = json.loads(meta.get("content", "{}"))
+                except json.JSONDecodeError:
+                    users[username] = {}
+            return users
+        except Exception:
+            return {}
+
     def save_state(self, username: str, state: dict) -> bool:
         """Save state dict for user. Returns True on success."""
         fname = self._filename(username)
