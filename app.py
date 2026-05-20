@@ -4,7 +4,7 @@ import os
 
 import streamlit as st
 
-from gist_client import GistClient
+from scores_client import ScoresClient
 
 st.set_page_config(
     page_title="地球物理刷题系统",
@@ -68,17 +68,33 @@ def init_session():
             st.session_state[k] = v
 
 
-# ── gist helpers ──────────────────────────────────────────────────────────────
-def get_gist_client():
+def get_secret_section(name: str):
     try:
-        token = str(st.secrets.get("GITHUB_TOKEN", "")).strip()
-        gist_id = str(st.secrets.get("GIST_ID", "")).strip()
-        if (
-            token and gist_id
-            and not token.startswith("your_")
-            and not gist_id.startswith("your_")
-        ):
-            return GistClient(token, gist_id)
+        section = st.secrets.get(name, {})
+        return section if hasattr(section, "get") else {}
+    except Exception:
+        return {}
+
+
+# ── score storage helpers ─────────────────────────────────────────────────────
+def get_scores_client():
+    try:
+        github = get_secret_section("github")
+        token = str(github.get("token", st.secrets.get("GITHUB_TOKEN", ""))).strip()
+        repo = str(
+            github.get("repo", st.secrets.get("GITHUB_REPO", "Pan-gao-1219/Question-bank"))
+        ).strip()
+        branch = str(github.get("branch", st.secrets.get("GITHUB_BRANCH", "main"))).strip()
+        scores_path = str(
+            github.get("scores_path", st.secrets.get("SCORES_PATH", "data/scores.json"))
+        ).strip()
+        invalid_token = (
+            token in {"xxxx", "your_token"}
+            or token.lower().startswith("your_")
+            or token.lower().startswith("your-")
+        )
+        if token and repo and scores_path and not invalid_token:
+            return ScoresClient(token, repo, branch or "main", scores_path)
     except Exception:
         pass
     return None
@@ -86,16 +102,17 @@ def get_gist_client():
 
 def get_admin_password() -> str:
     try:
-        return str(st.secrets.get("ADMIN_PASSWORD", "")).strip()
+        app = get_secret_section("app")
+        return str(app.get("admin_password", st.secrets.get("ADMIN_PASSWORD", ""))).strip()
     except Exception:
         return ""
 
 
 def load_user_state(username: str) -> dict:
-    client = get_gist_client()
+    client = get_scores_client()
     if not client:
         st.session_state.sync_ok = False
-        st.session_state.sync_error = "未配置 GITHUB_TOKEN 和 GIST_ID，进度只保存在本次会话。"
+        st.session_state.sync_error = "未配置 [github].token，进度只保存在本次会话。"
         return {}
     state = client.load_state(username)
     st.session_state.sync_ok = not bool(client.last_error)
@@ -104,9 +121,9 @@ def load_user_state(username: str) -> dict:
 
 
 def load_all_user_states() -> dict:
-    client = get_gist_client()
+    client = get_scores_client()
     if not client:
-        st.session_state.sync_error = "未配置 GITHUB_TOKEN 和 GIST_ID。"
+        st.session_state.sync_error = "未配置 [github].token。"
         return {}
     users = client.load_all_states()
     st.session_state.sync_error = client.last_error
@@ -114,10 +131,10 @@ def load_all_user_states() -> dict:
 
 
 def save_user_state():
-    client = get_gist_client()
+    client = get_scores_client()
     if not client:
         st.session_state.sync_ok = False
-        st.session_state.sync_error = "未配置 GITHUB_TOKEN 和 GIST_ID，进度只保存在本次会话。"
+        st.session_state.sync_error = "未配置 [github].token，进度只保存在本次会话。"
         return False
     ok = client.save_state(st.session_state.username, st.session_state.user_state)
     st.session_state.sync_ok = ok
@@ -225,8 +242,8 @@ def render_sync_status():
         st.warning(f"云同步未成功：{error[:220]}")
     elif st.session_state.get("sync_ok"):
         st.success("✅ 云同步已连接")
-    elif get_gist_client():
-        st.info("☁️ 云同步已配置，答题后会保存")
+    elif get_scores_client():
+        st.info("☁️ 成绩文件已配置，答题后会保存")
     else:
         st.info("💡 未配置云同步，进度只在本次会话有效")
 
@@ -356,15 +373,15 @@ def login_screen():
                 st.session_state.logged_in = True
                 reset_all_queues()
                 st.rerun()
-        if not get_gist_client():
-            st.info("💡 未配置 GitHub Gist，进度仅在本次会话有效。")
+        if not get_scores_client():
+            st.info("💡 未配置成绩文件写入，进度仅在本次会话有效。")
         elif st.session_state.sync_error:
             st.warning(f"云同步读取失败：{st.session_state.sync_error[:220]}")
 
     with admin_tab:
         admin_password = get_admin_password()
         if not admin_password:
-            st.warning("管理员入口未启用：请在 Streamlit Secrets 里配置 ADMIN_PASSWORD。")
+            st.warning("管理员入口未启用：请在 Streamlit Secrets 里配置 [app].admin_password。")
         else:
             password = st.text_input("管理员密码", type="password")
             if st.button("管理员登录", type="primary"):
@@ -442,15 +459,15 @@ def main_screen():
         st.subheader("☁️ 云同步")
         render_sync_status()
         st.markdown("---")
-        if get_gist_client():
-            st.success("✅ GitHub Gist 已配置，多端同步已开启")
+        if get_scores_client():
+            st.success("✅ GitHub 成绩文件已配置，多端同步已开启")
         else:
-            st.warning("⚠️ GitHub Gist 未配置，进度仅在当前会话有效")
+            st.warning("⚠️ GitHub 成绩文件未配置，进度仅在当前会话有效")
 
 
 def admin_screen():
     st.title("🛡️ 管理员后台")
-    client = get_gist_client()
+    client = get_scores_client()
 
     with st.sidebar:
         st.markdown("🛡️ **管理员**")
@@ -459,7 +476,7 @@ def admin_screen():
             st.rerun()
 
     if not client:
-        st.warning("需要先配置 GITHUB_TOKEN 和 GIST_ID，管理员才能读取所有用户答题情况。")
+        st.warning("需要先配置 [github].token，管理员才能读取所有用户答题情况。")
         return
 
     with st.spinner("正在读取用户进度…"):
