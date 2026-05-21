@@ -535,7 +535,11 @@ def main_screen():
 
         if st.session_state.nav not in nav_options:
             st.session_state.nav = nav_options[0]
-        st.radio("导航", nav_options, key="nav")
+        _nav_sel = st.radio(
+            "导航", nav_options,
+            index=nav_options.index(st.session_state.nav),
+        )
+        st.session_state["nav"] = _nav_sel
         st.markdown("---")
         render_sync_status()
         st.markdown("---")
