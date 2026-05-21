@@ -263,6 +263,10 @@ def render_q_header(q: dict):
     cat = "🌊 地震" if q["category"] == "地震" else "🔩 测井"
     typ = TYPE_LABELS.get(q["type"], "简答")
     st.markdown(f"**[{cat} · {typ}]** `Q{q['id']}/{TOTAL}`")
+    conf = q.get("confidence", "")
+    if conf:
+        _conf_label = {"high": "🟡 AI补全（高置信度）", "medium": "🟠 AI补全（中置信度）", "low": "🔴 AI补全（低置信度）"}
+        st.caption(_conf_label.get(conf, f"⚠️ AI补全（{conf}）"))
     st.markdown(f"### {q['q']}")
 
 
