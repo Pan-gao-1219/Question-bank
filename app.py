@@ -270,6 +270,26 @@ def render_q_header(q: dict):
     st.markdown(f"### {q['q']}")
 
 
+def _nav_buttons(prefix: str, qid: str, idx: int, show: str, done: str, last: str):
+    c1, c2 = st.columns(2)
+    with c1:
+        if idx > 0 and st.button("← 上一题", key=f"{prefix}_prev_{qid}",
+                                  use_container_width=True):
+            st.session_state[f"{prefix}_idx"] -= 1
+            st.session_state[show] = False
+            st.session_state[done] = False
+            st.session_state[last] = ""
+            st.rerun()
+    with c2:
+        if st.button("下一题 →", key=f"{prefix}_nxt_{qid}",
+                     type="primary", use_container_width=True):
+            st.session_state[f"{prefix}_idx"] += 1
+            st.session_state[show] = False
+            st.session_state[done] = False
+            st.session_state[last] = ""
+            st.rerun()
+
+
 def practice_panel(prefix: str):
     queue = st.session_state[f"{prefix}_queue"]
     idx   = st.session_state[f"{prefix}_idx"]
@@ -338,12 +358,7 @@ def practice_panel(prefix: str):
                     st.markdown(f"🟡 {opt}（漏选）")
                 else:
                     st.markdown(f"⬜ {opt}")
-            if st.button("下一题 →", key=f"{prefix}_nxt_{qid}", type="primary"):
-                st.session_state[f"{prefix}_idx"] += 1
-                st.session_state[show] = False
-                st.session_state[done] = False
-                st.session_state[last] = ""
-                st.rerun()
+            _nav_buttons(prefix, qid, idx, show, done, last)
     elif q["opts"]:
         # ── single choice (radio) ─────────────────────────────────────────────
         if not st.session_state[done]:
@@ -365,13 +380,17 @@ def practice_panel(prefix: str):
             else:
                 st.error(f"❌ 错误。你选了 **{user_l}**")
                 mark_wrong(qid)
-            st.info(f"参考答案：**{q['a']}**")
-            if st.button("下一题 →", key=f"{prefix}_nxt_{qid}", type="primary"):
-                st.session_state[f"{prefix}_idx"] += 1
-                st.session_state[show] = False
-                st.session_state[done] = False
-                st.session_state[last] = ""
-                st.rerun()
+            for opt in q["opts"]:
+                letter = opt[0].upper()
+                if letter == corr_l and letter == user_l:
+                    st.markdown(f"🟢 {opt}")
+                elif letter == user_l and letter != corr_l:
+                    st.markdown(f"🔴 {opt}（你的选择）")
+                elif letter == corr_l:
+                    st.markdown(f"🟡 {opt}（正确答案）")
+                else:
+                    st.markdown(f"⬜ {opt}")
+            _nav_buttons(prefix, qid, idx, show, done, last)
     else:
         # ── fill / self-judge ─────────────────────────────────────────────────
         if not st.session_state[show]:
@@ -385,8 +404,16 @@ def practice_panel(prefix: str):
             if st.session_state[last]:
                 st.info(f"📝 你的回答：**{st.session_state[last]}**")
             st.success(f"✅ 参考答案：**{q['a']}**")
-            c1, c2 = st.columns(2)
+            c1, c2, c3 = st.columns(3)
             with c1:
+                if idx > 0 and st.button("← 上一题", key=f"{prefix}_prev_{qid}",
+                                          use_container_width=True):
+                    st.session_state[f"{prefix}_idx"] -= 1
+                    st.session_state[show] = False
+                    st.session_state[done] = False
+                    st.session_state[last] = ""
+                    st.rerun()
+            with c2:
                 if st.button("✅ 答对了", key=f"{prefix}_ok_{qid}",
                              type="primary", use_container_width=True):
                     mark_correct(qid)
@@ -395,7 +422,7 @@ def practice_panel(prefix: str):
                     st.session_state[done] = False
                     st.session_state[last] = ""
                     st.rerun()
-            with c2:
+            with c3:
                 if st.button("❌ 答错了", key=f"{prefix}_fail_{qid}",
                              use_container_width=True):
                     mark_wrong(qid)
