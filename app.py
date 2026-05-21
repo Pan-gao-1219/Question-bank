@@ -320,12 +320,24 @@ def practice_panel(prefix: str):
             user_ans = st.session_state[last].upper()
             corr_ans = "".join(sorted(c for c in q["a"].upper() if c.isalpha()))
             if user_ans == corr_ans:
-                st.success("✅ 回答正确！")
+                st.success("✅  回答正确！")
                 mark_correct(qid)
             else:
                 st.error(f"❌ 错误。你选了 **{user_ans}**，正确是 **{corr_ans}**")
                 mark_wrong(qid)
-            st.info(f"正确答案：**{q['a']}**")
+            # 显示每个选项的对错状态
+            user_set = set(user_ans)
+            corr_set = set(corr_ans)
+            for opt in q["opts"]:
+                letter = opt[0].upper()
+                if letter in corr_set and letter in user_set:
+                    st.markdown(f"🟢 {opt}")
+                elif letter in user_set and letter not in corr_set:
+                    st.markdown(f"🔴 {opt}（多选）")
+                elif letter in corr_set and letter not in user_set:
+                    st.markdown(f"🟡 {opt}（漏选）")
+                else:
+                    st.markdown(f"⬜ {opt}")
             if st.button("下一题 →", key=f"{prefix}_nxt_{qid}", type="primary"):
                 st.session_state[f"{prefix}_idx"] += 1
                 st.session_state[show] = False
