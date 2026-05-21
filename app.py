@@ -473,7 +473,11 @@ def _jump_to_question(qid: str):
         return
     category = QUESTIONS[qid]["category"]
     prefix = CATEGORY_PREFIX[category]
+    order_key = f"{prefix}_order"
+    cur_order = st.session_state.get(order_key, "正序")
     queue = build_category_queue(category)
+    if cur_order == "倒序":
+        queue = list(reversed(queue))
     if qid not in queue:
         st.error("该题目不在队列中")
         return
@@ -573,7 +577,14 @@ def main_screen():
         if cur_order == "倒序":
             filtered_q = list(reversed(filtered_q))
         if st.session_state[f"{prefix}_queue"] != filtered_q:
-            reset_practice(prefix, filtered_q, resume=True)
+            cur_queue = st.session_state[f"{prefix}_queue"]
+            cur_idx = st.session_state[f"{prefix}_idx"]
+            cur_qid = cur_queue[cur_idx] if cur_idx < len(cur_queue) else None
+            reset_practice(prefix, filtered_q)
+            if cur_qid and cur_qid in filtered_q:
+                st.session_state[f"{prefix}_idx"] = filtered_q.index(cur_qid)
+            else:
+                st.session_state[f"{prefix}_idx"] = resume_index(filtered_q)
         if not filtered_q:
             st.info("该题型暂无题目。")
         else:
