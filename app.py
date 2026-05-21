@@ -270,10 +270,11 @@ def render_q_header(q: dict):
     st.markdown(f"### {q['q']}")
 
 
-def _nav_buttons(prefix: str, qid: str, idx: int, show: str, done: str, last: str):
+def _nav_buttons(prefix: str, qid: str, idx: int, show: str, done: str, last: str,
+                 suffix: str = ""):
     c1, c2 = st.columns(2)
     with c1:
-        if idx > 0 and st.button("← 上一题", key=f"{prefix}_prev_{qid}",
+        if idx > 0 and st.button("← 上一题", key=f"{prefix}_prev_{qid}{suffix}",
                                   use_container_width=True):
             st.session_state[f"{prefix}_idx"] -= 1
             st.session_state[show] = False
@@ -281,7 +282,7 @@ def _nav_buttons(prefix: str, qid: str, idx: int, show: str, done: str, last: st
             st.session_state[last] = ""
             st.rerun()
     with c2:
-        if st.button("下一题 →", key=f"{prefix}_nxt_{qid}",
+        if st.button("下一题 →", key=f"{prefix}_nxt_{qid}{suffix}",
                      type="primary", use_container_width=True):
             st.session_state[f"{prefix}_idx"] += 1
             st.session_state[show] = False
@@ -336,6 +337,7 @@ def practice_panel(prefix: str):
                     st.session_state[last] = selected
                     st.session_state[done] = True
                     st.rerun()
+            _nav_buttons(prefix, qid, idx, show, done, last, suffix="_pre")
         else:
             user_ans = st.session_state[last].upper()
             corr_ans = "".join(sorted(c for c in q["a"].upper() if c.isalpha()))
@@ -371,6 +373,7 @@ def practice_panel(prefix: str):
                     st.session_state[last] = choice[0]
                     st.session_state[done] = True
                     st.rerun()
+            _nav_buttons(prefix, qid, idx, show, done, last, suffix="_pre")
         else:
             user_l = st.session_state[last].upper()
             corr_l = q["a"].strip()[0].upper() if q["a"].strip() else ""
@@ -400,6 +403,7 @@ def practice_panel(prefix: str):
                 st.session_state[last] = ans
                 st.session_state[show] = True
                 st.rerun()
+            _nav_buttons(prefix, qid, idx, show, done, last, suffix="_pre")
         else:
             if st.session_state[last]:
                 st.info(f"📝 你的回答：**{st.session_state[last]}**")
