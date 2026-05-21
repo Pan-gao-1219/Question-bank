@@ -59,7 +59,11 @@ _DEFAULTS = {
     "wrong_last": "",
     "seismic_qtype": "全部",
     "logging_qtype": "全部",
+    "seismic_order": "正序",
+    "logging_order": "正序",
     "wrong_category": "全部",
+    "ov_cat": "全部",
+    "ov_status": "全部",
     "nav": "🌊 地震刷题",
 }
 
@@ -257,7 +261,7 @@ def render_sync_status():
 
 def render_q_header(q: dict):
     cat = "🌊 地震" if q["category"] == "地震" else "🔩 测井"
-    typ = {"fill": "填空", "choice": "选择", "judge": "判断", "multi": "多选"}.get(q["type"], "简答")
+    typ = TYPE_LABELS.get(q["type"], "简答")
     st.markdown(f"**[{cat} · {typ}]** `Q{q['id']}/{TOTAL}`")
     st.markdown(f"### {q['q']}")
 
@@ -386,6 +390,95 @@ def practice_panel(prefix: str):
                     st.rerun()
 
 
+TYPE_LABELS = {"fill": "填空", "choice": "选择", "judge": "判断", "multi": "多选", "other": "简答"}
+
+
+def overview_screen():
+    st.header("📋 题目总览")
+    state = st.session_state.user_state
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.selectbox("分类", ["全部", "地震", "测井"], key="ov_cat")
+    with c2:
+        st.selectbox("状态筛选", ["全部", "未做", "已掌握", "错题"], key="ov_status")
+
+    cat_filter = None if st.session_state.ov_cat == "全部" else st.session_state.ov_cat
+    status_filter = st.session_state.ov_status
+
+    STATUS_ICON = {1: "✅ 已掌握", 0: "❌ 错题", None: "⬜ 未做"}
+    STATUS_MAP = {"未做": "⬜ 未做", "已掌握": "✅ 已掌握", "错题": "❌ 错题"}
+
+    rows = []
+    for qid in question_ids(cat_filter):
+        q = QUESTIONS[qid]
+        val = state.get(qid)
+        status = STATUS_ICON[val if val in (0, 1) else None]
+        if status_filter != "全部" and status != STATUS_MAP[status_filter]:
+            continue
+        rows.append({
+            "题号": int(qid),
+            "分类": q["category"],
+            "题型": TYPE_LABELS.get(q["type"], "简答"),
+            "状态": status,
+            "题目": q["q"][:45] + ("…" if len(q["q"]) > 45 else ""),
+        })
+
+    if not rows:
+        st.info("没有符合条件的题目。")
+        return
+
+    st.caption(f"共 {len(rows)} 题")
+    event = st.dataframe(
+        rows,
+        use_container_width=True,
+        hide_index=True,
+        on_select="rerun",
+        selection_mode="single-row",
+    )
+
+    # Jump via table row selection
+    selected_rows = event.selection.rows if hasattr(event, "selection") else []
+    if selected_rows:
+        selected_id = str(rows[selected_rows[0]]["题号"])
+        sel_q = QUESTIONS[selected_id]
+        st.info(f"**Q{selected_id}** [{sel_q['category']} · {TYPE_LABELS.get(sel_q['type'], '简答')}]  {sel_q['q'][:60]}")
+        if st.button("跳转并开始练习 →", type="primary", key="ov_jump_sel"):
+            _jump_to_question(selected_id)
+
+    # Jump via manual input
+    st.markdown("---")
+    all_ids = [int(qid) for qid in question_ids(cat_filter)]
+    jcol1, jcol2 = st.columns([2, 1])
+    with jcol1:
+        jump_num = st.number_input(
+            "手动输入题号跳转",
+            min_value=min(all_ids), max_value=max(all_ids),
+            value=min(all_ids), step=1, key="ov_jump_num",
+        )
+    with jcol2:
+        st.write("")
+        st.write("")
+        if st.button("跳转 →", key="ov_jump_btn"):
+            _jump_to_question(str(int(jump_num)))
+
+
+def _jump_to_question(qid: str):
+    if qid not in QUESTIONS:
+        st.error(f"题号 {qid} 不存在")
+        return
+    category = QUESTIONS[qid]["category"]
+    prefix = CATEGORY_PREFIX[category]
+    queue = build_category_queue(category)
+    if qid not in queue:
+        st.error("该题目不在队列中")
+        return
+    reset_practice(prefix, queue)
+    st.session_state[f"{prefix}_idx"] = queue.index(qid)
+    st.session_state.nav = "🌊 地震刷题" if category == "地震" else "🔩 测井刷题"
+    st.rerun()
+
+
 # ── screens ───────────────────────────────────────────────────────────────────
 def login_screen():
     st.title("🌏 地球物理知识竞赛刷题系统")
@@ -438,7 +531,7 @@ def main_screen():
     with st.sidebar:
         st.markdown(f"👤 **{st.session_state.username}**")
         st.markdown("---")
-        nav_options = ["🌊 地震刷题", "🔩 测井刷题", "🔥 错题轰炸", "⚙️ 设置"]
+        nav_options = ["🌊 地震刷题", "🔩 测井刷题", "🔥 错题轰炸", "📋 题目总览", "⚙️ 设置"]
 
         if st.session_state.nav not in nav_options:
             st.session_state.nav = nav_options[0]
@@ -456,17 +549,30 @@ def main_screen():
         category = "地震" if nav.startswith("🌊") else "测井"
         prefix = CATEGORY_PREFIX[category]
         st.header(nav)
-        qtype_key = f"{prefix}_qtype"
-        st.radio("题型", ["全部", "选择题", "填空/简答"],
-                 horizontal=True, key=qtype_key)
+
+        row1, row2 = st.columns([3, 2])
+        with row1:
+            qtype_key = f"{prefix}_qtype"
+            st.radio("题型", ["全部", "选择题", "填空/简答"],
+                     horizontal=True, key=qtype_key)
+        with row2:
+            order_key = f"{prefix}_order"
+            st.radio("顺序", ["正序", "倒序"], horizontal=True, key=order_key)
+
         cur_qtype = st.session_state[qtype_key]
+        cur_order = st.session_state[order_key]
         filtered_q = build_category_queue(category, cur_qtype)
-        if set(st.session_state[f"{prefix}_queue"]) != set(filtered_q):
+        if cur_order == "倒序":
+            filtered_q = list(reversed(filtered_q))
+        if st.session_state[f"{prefix}_queue"] != filtered_q:
             reset_practice(prefix, filtered_q, resume=True)
         if not filtered_q:
             st.info("该题型暂无题目。")
         else:
             practice_panel(prefix)
+
+    elif nav == "📋 题目总览":
+        overview_screen()
 
     elif nav == "🔥 错题轰炸":
         st.header("🔥 错题轰炸区")
@@ -587,7 +693,7 @@ def admin_screen():
         detail_rows.append({
             "题号": qid,
             "分类": q.get("category", ""),
-            "题型": {"fill": "填空", "choice": "选择", "judge": "判断", "multi": "多选"}.get(q.get("type"), "简答"),
+            "题型": TYPE_LABELS.get(q.get("type"), "简答"),
             "状态": status,
             "题目": q.get("q", ""),
         })
