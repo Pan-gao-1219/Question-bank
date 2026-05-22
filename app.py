@@ -71,18 +71,26 @@ _DEFAULTS = {
 
 
 def _migrate_state(state: dict) -> dict:
-    """Convert legacy 0/1 or interim int encoding to 'c'/'wN' encoding.
-    Safe to run multiple times: 'c' and 'wN' values pass through unchanged."""
+    """Convert legacy 0/1 or interim formats to 'c'/'wN' encoding.
+    Safe to run multiple times."""
     migrated = {}
     for qid, val in state.items():
-        if val == "c" or (isinstance(val, str) and val.startswith("w")):
-            migrated[qid] = val          # already new format
+        if val == "c":
+            migrated[qid] = "c"
+        elif isinstance(val, str) and val.startswith("w"):
+            migrated[qid] = val
+        elif isinstance(val, str) and val.startswith("c") and len(val) > 1:
+            try:
+                n = int(val[1:])
+                migrated[qid] = f"w{n}" if n > 0 else "c"  # cN → wN
+            except ValueError:
+                migrated[qid] = "c"
         elif val == 1:
-            migrated[qid] = "c"          # old correct → mastered
+            migrated[qid] = "c"
         elif val == 0:
-            migrated[qid] = "w1"         # old wrong → wrong once
+            migrated[qid] = "w1"
         elif isinstance(val, int) and val >= 1:
-            migrated[qid] = f"w{val}"    # interim int count → wN
+            migrated[qid] = f"w{val}"
     return migrated
 
 
@@ -226,8 +234,9 @@ def build_wrong_queue(category: str | None = None, count_filter: str = "全部")
 # ── state helpers ─────────────────────────────────────────────────────────────
 def mark_correct(qid: str):
     cur = st.session_state.user_state.get(qid)
-    n = _wrong_count(cur)
-    st.session_state.user_state[qid] = f"c{n}" if n > 0 else "c"
+    if _is_wrong(cur):
+        return  # 错过的题答对不改变计数，继续留在错题本
+    st.session_state.user_state[qid] = "c"
     save_user_state()
 
 
