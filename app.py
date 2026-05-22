@@ -196,8 +196,17 @@ def _is_wrong(val) -> bool:
     return isinstance(val, str) and val.startswith("w")
 
 
+def _is_mastered(val) -> bool:
+    return isinstance(val, str) and val.startswith("c")
+
+
 def _wrong_count(val) -> int:
-    return int(val[1:]) if _is_wrong(val) else 0
+    if isinstance(val, str) and len(val) > 1:
+        try:
+            return int(val[1:])
+        except ValueError:
+            pass
+    return 0
 
 
 def build_wrong_queue(category: str | None = None, count_filter: str = "全部"):
@@ -216,20 +225,22 @@ def build_wrong_queue(category: str | None = None, count_filter: str = "全部")
 
 # ── state helpers ─────────────────────────────────────────────────────────────
 def mark_correct(qid: str):
-    st.session_state.user_state[qid] = "c"
+    cur = st.session_state.user_state.get(qid)
+    n = _wrong_count(cur)
+    st.session_state.user_state[qid] = f"c{n}" if n > 0 else "c"
     save_user_state()
 
 
 def mark_wrong(qid: str):
     cur = st.session_state.user_state.get(qid)
-    n = _wrong_count(cur) if _is_wrong(cur) else 0
+    n = _wrong_count(cur)
     st.session_state.user_state[qid] = f"w{n + 1}"
     save_user_state()
 
 
 def summarize_state(state: dict, category: str | None = None) -> dict:
     qids = set(question_ids(category))
-    correct = sum(1 for qid in qids if state.get(qid) == "c")
+    correct = sum(1 for qid in qids if _is_mastered(state.get(qid)))
     wrong = sum(1 for qid in qids if _is_wrong(state.get(qid)))
     return {
         "total": len(qids),
@@ -243,7 +254,7 @@ def resume_index(queue: list[str]) -> int:
     """Return the first question that has not been mastered yet."""
     state = st.session_state.user_state
     for idx, qid in enumerate(queue):
-        if state.get(qid) != "c":
+        if not _is_mastered(state.get(qid)):
             return idx
     return len(queue)
 
@@ -493,8 +504,9 @@ def overview_screen():
     for qid in question_ids(cat_filter):
         q = QUESTIONS[qid]
         val = state.get(qid)
-        if val == "c":
-            status = "✅ 已掌握"
+        if _is_mastered(val):
+            n = _wrong_count(val)
+            status = f"✅ 已掌握(曾错×{n})" if n > 0 else "✅ 已掌握"
         elif _is_wrong(val):
             status = f"❌ 错题(×{_wrong_count(val)})"
         else:
@@ -717,14 +729,15 @@ def main_screen():
     elif nav == "⚙️ 设置":
         st.header("⚙️ 设置与重置")
         state = st.session_state.user_state
-        correct_ids = [q for q, v in state.items() if v == "c"]
+        correct_ids = [q for q, v in state.items() if _is_mastered(v)]
         st.markdown(f"**用户名：** `{st.session_state.username}`")
         st.markdown("---")
         st.subheader("🔥 赛前极限复活")
         st.write(f"将 **{len(correct_ids)}** 道已掌握题目重新打入错题本，进行极限速刷。")
         if st.button("⚡ 一键复活所有已掌握题目", type="primary"):
             for qid in correct_ids:
-                st.session_state.user_state[qid] = 1
+                n = _wrong_count(st.session_state.user_state.get(qid))
+                st.session_state.user_state[qid] = f"w{n + 1}"
             save_user_state()
             reset_all_queues()
             st.success(f"已将 {len(correct_ids)} 道题重置回错题本！")
@@ -816,8 +829,9 @@ def admin_screen():
     detail_rows = []
     for qid in question_ids(category):
         value = state.get(qid)
-        if value == "c":
-            status = "✅ 已掌握"
+        if _is_mastered(value):
+            n = _wrong_count(value)
+            status = f"✅ 已掌握(曾错×{n})" if n > 0 else "✅ 已掌握"
         elif _is_wrong(value):
             status = f"❌ 错误(×{_wrong_count(value)})"
         else:
