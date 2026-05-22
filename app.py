@@ -225,9 +225,7 @@ def build_wrong_queue(category: str | None = None, count_filter: str = "全部")
 
 # ── state helpers ─────────────────────────────────────────────────────────────
 def mark_correct(qid: str):
-    cur = st.session_state.user_state.get(qid)
-    n = _wrong_count(cur)
-    st.session_state.user_state[qid] = f"c{n}" if n > 0 else "c"
+    st.session_state.user_state[qid] = "c"
     save_user_state()
 
 
@@ -505,8 +503,7 @@ def overview_screen():
         q = QUESTIONS[qid]
         val = state.get(qid)
         if _is_mastered(val):
-            n = _wrong_count(val)
-            status = f"✅ 已掌握(曾错×{n})" if n > 0 else "✅ 已掌握"
+            status = "✅ 已掌握"
         elif _is_wrong(val):
             status = f"❌ 错题(×{_wrong_count(val)})"
         else:
@@ -736,8 +733,7 @@ def main_screen():
         st.write(f"将 **{len(correct_ids)}** 道已掌握题目重新打入错题本，进行极限速刷。")
         if st.button("⚡ 一键复活所有已掌握题目", type="primary"):
             for qid in correct_ids:
-                n = _wrong_count(st.session_state.user_state.get(qid))
-                st.session_state.user_state[qid] = f"w{n + 1}"
+                st.session_state.user_state[qid] = "w1"
             save_user_state()
             reset_all_queues()
             st.success(f"已将 {len(correct_ids)} 道题重置回错题本！")
@@ -830,8 +826,7 @@ def admin_screen():
     for qid in question_ids(category):
         value = state.get(qid)
         if _is_mastered(value):
-            n = _wrong_count(value)
-            status = f"✅ 已掌握(曾错×{n})" if n > 0 else "✅ 已掌握"
+            status = "✅ 已掌握"
         elif _is_wrong(value):
             status = f"❌ 错误(×{_wrong_count(value)})"
         else:
