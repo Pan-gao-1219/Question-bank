@@ -62,10 +62,24 @@ _DEFAULTS = {
     "seismic_order": "正序",
     "logging_order": "正序",
     "wrong_category": "全部",
+    "wrong_count_filter": "全部",
     "ov_cat": "全部",
     "ov_status": "全部",
     "nav": "🌊 地震刷题",
 }
+
+
+def _migrate_state(state: dict) -> dict:
+    """Convert legacy 0/1 encoding to 'c'/count encoding."""
+    migrated = {}
+    for qid, val in state.items():
+        if val == 1:
+            migrated[qid] = "c"
+        elif val == 0:
+            migrated[qid] = 1
+        else:
+            migrated[qid] = val
+    return migrated
 
 
 def init_session():
@@ -123,7 +137,7 @@ def load_user_state(username: str) -> dict:
     state = client.load_state(username)
     st.session_state.sync_ok = not bool(client.last_error)
     st.session_state.sync_error = client.last_error
-    return state
+    return _migrate_state(state)
 
 
 def load_all_user_states() -> dict:
@@ -174,29 +188,42 @@ def active_wrong_category():
     return None if category == "全部" else category
 
 
-def build_wrong_queue(category: str | None = None):
-    qids = set(question_ids(category))
-    return [
-        qid for qid in question_ids(category)
-        if qid in qids and st.session_state.user_state.get(qid) == 0
-    ]
+def _is_wrong(val) -> bool:
+    return isinstance(val, int) and val >= 1
+
+
+def build_wrong_queue(category: str | None = None, count_filter: str = "全部"):
+    result = []
+    for qid in question_ids(category):
+        val = st.session_state.user_state.get(qid)
+        if not _is_wrong(val):
+            continue
+        if count_filter == "错1次" and val != 1:
+            continue
+        if count_filter == "错2次" and val != 2:
+            continue
+        if count_filter == "错3次+" and val < 3:
+            continue
+        result.append(qid)
+    return result
 
 
 # ── state helpers ─────────────────────────────────────────────────────────────
 def mark_correct(qid: str):
-    st.session_state.user_state[qid] = 1
+    st.session_state.user_state[qid] = "c"
     save_user_state()
 
 
 def mark_wrong(qid: str):
-    st.session_state.user_state[qid] = 0
+    cur = st.session_state.user_state.get(qid, 0)
+    st.session_state.user_state[qid] = (cur + 1) if _is_wrong(cur) else 1
     save_user_state()
 
 
 def summarize_state(state: dict, category: str | None = None) -> dict:
     qids = set(question_ids(category))
-    correct = sum(1 for qid in qids if state.get(qid) == 1)
-    wrong = sum(1 for qid in qids if state.get(qid) == 0)
+    correct = sum(1 for qid in qids if state.get(qid) == "c")
+    wrong = sum(1 for qid in qids if _is_wrong(state.get(qid)))
     return {
         "total": len(qids),
         "done": correct + wrong,
@@ -209,7 +236,7 @@ def resume_index(queue: list[str]) -> int:
     """Return the first question that has not been mastered yet."""
     state = st.session_state.user_state
     for idx, qid in enumerate(queue):
-        if state.get(qid) != 1:
+        if state.get(qid) != "c":
             return idx
     return len(queue)
 
@@ -225,7 +252,7 @@ def reset_practice(prefix: str, queue: list[str], resume: bool = False):
 def reset_all_queues():
     for category in CATEGORIES:
         reset_practice(CATEGORY_PREFIX[category], build_category_queue(category), resume=True)
-    reset_practice("wrong", build_wrong_queue(active_wrong_category()))
+    reset_practice("wrong", build_wrong_queue(active_wrong_category(), "全部"))
 
 
 # ── UI components ─────────────────────────────────────────────────────────────
@@ -453,16 +480,23 @@ def overview_screen():
     cat_filter = None if st.session_state.ov_cat == "全部" else st.session_state.ov_cat
     status_filter = st.session_state.ov_status
 
-    STATUS_ICON = {1: "✅ 已掌握", 0: "❌ 错题", None: "⬜ 未做"}
     STATUS_MAP = {"未做": "⬜ 未做", "已掌握": "✅ 已掌握", "错题": "❌ 错题"}
 
     rows = []
     for qid in question_ids(cat_filter):
         q = QUESTIONS[qid]
         val = state.get(qid)
-        status = STATUS_ICON[val if val in (0, 1) else None]
-        if status_filter != "全部" and status != STATUS_MAP[status_filter]:
-            continue
+        if val == "c":
+            status = "✅ 已掌握"
+        elif _is_wrong(val):
+            status = f"❌ 错题(×{val})"
+        else:
+            status = "⬜ 未做"
+        # 筛选时错题统一匹配
+        if status_filter != "全部":
+            mapped = STATUS_MAP[status_filter]
+            if not status.startswith(mapped[:2]):
+                continue
         rows.append({
             "题号": int(qid),
             "分类": q["category"],
@@ -638,10 +672,26 @@ def main_screen():
 
     elif nav == "🔥 错题轰炸":
         st.header("🔥 错题轰炸区")
-        st.radio("错题范围", ["全部", "地震", "测井"], horizontal=True, key="wrong_category")
-        wq = build_wrong_queue(active_wrong_category())
+        wf_col1, wf_col2 = st.columns(2)
+        with wf_col1:
+            st.radio("错题范围", ["全部", "地震", "测井"], horizontal=True, key="wrong_category")
+        with wf_col2:
+            st.radio("错误次数", ["全部", "错1次", "错2次", "错3次+"],
+                     horizontal=True, key="wrong_count_filter")
+
+        cur_count_filter = st.session_state.wrong_count_filter
+        wq = build_wrong_queue(active_wrong_category(), cur_count_filter)
+
+        # 显示各次数的错题统计
+        state = st.session_state.user_state
+        cat_filter = active_wrong_category()
+        cnt1 = len(build_wrong_queue(cat_filter, "错1次"))
+        cnt2 = len(build_wrong_queue(cat_filter, "错2次"))
+        cnt3 = len(build_wrong_queue(cat_filter, "错3次+"))
+        st.caption(f"错1次：{cnt1} 题　错2次：{cnt2} 题　错3次+：{cnt3} 题")
+
         if not wq:
-            st.info("🎉 目前没有错题！先去主线刷题积累错题吧。")
+            st.info("🎉 该筛选条件下没有错题！")
         else:
             cur = set(st.session_state.wrong_queue)
             if not cur or cur != set(wq):
@@ -651,14 +701,14 @@ def main_screen():
     elif nav == "⚙️ 设置":
         st.header("⚙️ 设置与重置")
         state = st.session_state.user_state
-        correct_ids = [q for q, v in state.items() if v == 1]
+        correct_ids = [q for q, v in state.items() if v == "c"]
         st.markdown(f"**用户名：** `{st.session_state.username}`")
         st.markdown("---")
         st.subheader("🔥 赛前极限复活")
         st.write(f"将 **{len(correct_ids)}** 道已掌握题目重新打入错题本，进行极限速刷。")
         if st.button("⚡ 一键复活所有已掌握题目", type="primary"):
             for qid in correct_ids:
-                st.session_state.user_state[qid] = 0
+                st.session_state.user_state[qid] = 1
             save_user_state()
             reset_all_queues()
             st.success(f"已将 {len(correct_ids)} 道题重置回错题本！")
@@ -750,7 +800,12 @@ def admin_screen():
     detail_rows = []
     for qid in question_ids(category):
         value = state.get(qid)
-        status = "正确" if value == 1 else "错误" if value == 0 else "未做"
+        if value == "c":
+            status = "✅ 已掌握"
+        elif _is_wrong(value):
+            status = f"❌ 错误(×{value})"
+        else:
+            status = "⬜ 未做"
         q = QUESTIONS[qid]
         detail_rows.append({
             "题号": qid,
