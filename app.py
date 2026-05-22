@@ -63,6 +63,7 @@ _DEFAULTS = {
     "logging_order": "正序",
     "wrong_category": "全部",
     "wrong_count_filter": "全部",
+    "_state_migrated": False,
     "ov_cat": "全部",
     "ov_status": "全部",
     "nav": "🌊 地震刷题",
@@ -70,15 +71,18 @@ _DEFAULTS = {
 
 
 def _migrate_state(state: dict) -> dict:
-    """Convert legacy 0/1 encoding to 'c'/count encoding."""
+    """Convert legacy 0/1 or interim int encoding to 'c'/'wN' encoding.
+    Safe to run multiple times: 'c' and 'wN' values pass through unchanged."""
     migrated = {}
     for qid, val in state.items():
-        if val == 1:
-            migrated[qid] = "c"
+        if val == "c" or (isinstance(val, str) and val.startswith("w")):
+            migrated[qid] = val          # already new format
+        elif val == 1:
+            migrated[qid] = "c"          # old correct → mastered
         elif val == 0:
-            migrated[qid] = 1
-        else:
-            migrated[qid] = val
+            migrated[qid] = "w1"         # old wrong → wrong once
+        elif isinstance(val, int) and val >= 1:
+            migrated[qid] = f"w{val}"    # interim int count → wN
     return migrated
 
 
@@ -189,7 +193,11 @@ def active_wrong_category():
 
 
 def _is_wrong(val) -> bool:
-    return isinstance(val, int) and val >= 1
+    return isinstance(val, str) and val.startswith("w")
+
+
+def _wrong_count(val) -> int:
+    return int(val[1:]) if _is_wrong(val) else 0
 
 
 def build_wrong_queue(category: str | None = None, count_filter: str = "全部"):
@@ -200,7 +208,7 @@ def build_wrong_queue(category: str | None = None, count_filter: str = "全部")
             continue
         if count_filter != "全部":
             target = int(count_filter.replace("错", "").replace("次", ""))
-            if val != target:
+            if _wrong_count(val) != target:
                 continue
         result.append(qid)
     return result
@@ -213,8 +221,9 @@ def mark_correct(qid: str):
 
 
 def mark_wrong(qid: str):
-    cur = st.session_state.user_state.get(qid, 0)
-    st.session_state.user_state[qid] = (cur + 1) if _is_wrong(cur) else 1
+    cur = st.session_state.user_state.get(qid)
+    n = _wrong_count(cur) if _is_wrong(cur) else 0
+    st.session_state.user_state[qid] = f"w{n + 1}"
     save_user_state()
 
 
@@ -487,7 +496,7 @@ def overview_screen():
         if val == "c":
             status = "✅ 已掌握"
         elif _is_wrong(val):
-            status = f"❌ 错题(×{val})"
+            status = f"❌ 错题(×{_wrong_count(val)})"
         else:
             status = "⬜ 未做"
         # 筛选时错题统一匹配
@@ -589,6 +598,7 @@ def login_screen():
                 st.session_state.username = name
                 st.session_state.user_state = state
                 st.session_state.logged_in = True
+                st.session_state._state_migrated = True
                 reset_all_queues()
                 st.rerun()
         if not get_scores_client():
@@ -611,6 +621,11 @@ def login_screen():
 
 
 def main_screen():
+    # Migrate session state once per session (fixes sessions loaded with old format)
+    if not st.session_state.get("_state_migrated"):
+        st.session_state.user_state = _migrate_state(st.session_state.user_state)
+        st.session_state._state_migrated = True
+
     with st.sidebar:
         st.markdown(f"👤 **{st.session_state.username}**")
         st.markdown("---")
@@ -804,7 +819,7 @@ def admin_screen():
         if value == "c":
             status = "✅ 已掌握"
         elif _is_wrong(value):
-            status = f"❌ 错误(×{value})"
+            status = f"❌ 错误(×{_wrong_count(value)})"
         else:
             status = "⬜ 未做"
         q = QUESTIONS[qid]

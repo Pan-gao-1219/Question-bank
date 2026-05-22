@@ -65,7 +65,7 @@ class ScoresClient:
             return {
                 str(qid): value
                 for qid, value in record.items()
-                if value in (0, 1) or value == "c" or (isinstance(value, int) and value >= 1)
+                if value in (0, 1) or value == "c" or (isinstance(value, str) and value.startswith("w"))
             }
         return {}
 
