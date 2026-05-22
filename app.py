@@ -225,7 +225,9 @@ def build_wrong_queue(category: str | None = None, count_filter: str = "全部")
 
 # ── state helpers ─────────────────────────────────────────────────────────────
 def mark_correct(qid: str):
-    st.session_state.user_state[qid] = "c"
+    cur = st.session_state.user_state.get(qid)
+    n = _wrong_count(cur)
+    st.session_state.user_state[qid] = f"c{n}" if n > 0 else "c"
     save_user_state()
 
 
