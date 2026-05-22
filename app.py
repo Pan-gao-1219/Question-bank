@@ -198,12 +198,10 @@ def build_wrong_queue(category: str | None = None, count_filter: str = "全部")
         val = st.session_state.user_state.get(qid)
         if not _is_wrong(val):
             continue
-        if count_filter == "错1次" and val != 1:
-            continue
-        if count_filter == "错2次" and val != 2:
-            continue
-        if count_filter == "错3次+" and val < 3:
-            continue
+        if count_filter != "全部":
+            target = int(count_filter.replace("错", "").replace("次", ""))
+            if val != target:
+                continue
         result.append(qid)
     return result
 
@@ -676,19 +674,22 @@ def main_screen():
         with wf_col1:
             st.radio("错题范围", ["全部", "地震", "测井"], horizontal=True, key="wrong_category")
         with wf_col2:
-            st.radio("错误次数", ["全部", "错1次", "错2次", "错3次+"],
-                     horizontal=True, key="wrong_count_filter")
+            wrong_count_options = ["全部"] + [f"错{i}次" for i in range(1, 11)]
+            st.selectbox("错误次数", wrong_count_options, key="wrong_count_filter")
 
         cur_count_filter = st.session_state.wrong_count_filter
-        wq = build_wrong_queue(active_wrong_category(), cur_count_filter)
-
-        # 显示各次数的错题统计
-        state = st.session_state.user_state
         cat_filter = active_wrong_category()
-        cnt1 = len(build_wrong_queue(cat_filter, "错1次"))
-        cnt2 = len(build_wrong_queue(cat_filter, "错2次"))
-        cnt3 = len(build_wrong_queue(cat_filter, "错3次+"))
-        st.caption(f"错1次：{cnt1} 题　错2次：{cnt2} 题　错3次+：{cnt3} 题")
+        wq = build_wrong_queue(cat_filter, cur_count_filter)
+
+        # 显示各次数的错题统计（只显示有题的）
+        state = st.session_state.user_state
+        count_summary = []
+        for i in range(1, 11):
+            c = len(build_wrong_queue(cat_filter, f"错{i}次"))
+            if c > 0:
+                count_summary.append(f"错{i}次：{c}题")
+        if count_summary:
+            st.caption("　".join(count_summary))
 
         if not wq:
             st.info("🎉 该筛选条件下没有错题！")
